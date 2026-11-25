@@ -1,0 +1,271 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memória Sonora</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;padding:20px;
+ font-family:Arial,sans-serif;
+ background:linear-gradient(135deg,#171b38,#343b70);
+ color:white;text-align:center;
+ min-height:100vh
+}
+main{max-width:520px;margin:auto}
+h1{font-size:30px;margin-bottom:5px}
+.sub{color:#d5dafa;margin-bottom:22px}
+.card{
+ background:#ffffff14;border:1px solid #ffffff30;
+ border-radius:18px;padding:18px;margin:15px 0
+}
+button{
+ border:0;border-radius:12px;padding:15px;
+ font-size:17px;font-weight:bold;cursor:pointer;
+ background:#8297ff;color:#10152f;
+ touch-action:manipulation
+}
+button:disabled{opacity:.4}
+.start{background:#70e0b0;width:100%;margin:8px 0}
+.numbers{
+ display:grid;grid-template-columns:repeat(5,1fr);gap:9px
+}
+.numbers button{padding:15px 4px}
+.numbers button.selected{background:#ffdb75}
+.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.actions button{flex:1;min-width:100px}
+#status{min-height:48px;line-height:1.5}
+#answer{font-size:20px;letter-spacing:4px;min-height:30px}
+input{
+ width:100%;padding:14px;border-radius:10px;
+ border:0;font-size:20px;text-align:center;margin:10px 0
+}
+.small{font-size:13px;color:#d5dafa}
+.hidden{display:none}
+#feedback{font-weight:bold;min-height:28px}
+</style>
+</head>
+<body>
+<main>
+<h1>🎧 MEMÓRIA SONORA</h1>
+<p class="sub">Ouça, memorize e calcule!</p>
+
+<div class="card">
+ <h3>🔊 Conheça os sons</h3>
+ <p class="small">Toque nos números para conhecer seus sons.</p>
+ <div class="numbers" id="learn"></div>
+</div>
+
+<div class="card">
+ <h3 id="level">Nível 1</h3>
+ <p id="status">Prepare sua memória auditiva!</p>
+ <button class="start" id="start">▶ INICIAR JOGO</button>
+ <div id="answer"></div>
+ <p class="small" id="progress">Nenhuma rodada iniciada</p>
+</div>
+
+<div class="card">
+ <h3>🔢 Sua resposta</h3>
+ <p class="small">Clique nos números na ordem em que ouviu.</p>
+ <div class="numbers" id="choices"></div>
+ <div class="actions" style="margin-top:12px">
+  <button id="undo">↶ Apagar</button>
+  <button id="check">Confirmar sequência</button>
+ </div>
+ <p id="feedback"></p>
+</div>
+
+<div class="card hidden" id="math">
+ <h3>🧮 Desafio matemático</h3>
+ <p id="mathQuestion">Calcule a média dos números.</p>
+ <input id="mean" type="number" step="any" placeholder="Digite a média">
+ <button class="start" id="checkMean">Conferir média</button>
+ <p id="mathFeedback"></p>
+</div>
+
+<div class="card">
+ <h3>🏆 Sua pontuação</h3>
+ <p style="font-size:28px" id="score">0 pontos</p>
+ <p class="small" id="record">Complete as fases para avançar!</p>
+</div>
+</main>
+
+<script>
+const frequencies=[
+ 261.63,293.66,329.63,349.23,392,
+ 440,493.88,523.25,587.33,659.25
+];
+
+let audio;
+let sequence=[];
+let answer=[];
+let level=1;
+let score=0;
+let phase="ready";
+let roundPoints=0;
+
+const $=id=>document.getElementById(id);
+
+function getAudio(){
+ if(!audio) audio=new (window.AudioContext||window.webkitAudioContext)();
+ if(audio.state==="suspended") audio.resume();
+}
+
+function sound(n){
+ getAudio();
+ const osc=audio.createOscillator();
+ const gain=audio.createGain();
+ osc.type=["sine","triangle","square","sine","triangle",
+ "square","sine","triangle","square","sine"][n];
+ osc.frequency.value=frequencies[n];
+ gain.gain.setValueAtTime(0.0001,audio.currentTime);
+ gain.gain.exponentialRampToValueAtTime(.20,audio.currentTime+.025);
+ gain.gain.exponentialRampToValueAtTime(.0001,audio.currentTime+.35);
+ osc.connect(gain);
+ gain.connect(audio.destination);
+ osc.start();
+ osc.stop(audio.currentTime+.36);
+}
+
+function wait(ms){return new Promise(r=>setTimeout(r,ms))}
+
+function createButtons(){
+ for(let n=0;n<10;n++){
+  const b=document.createElement("button");
+  b.textContent=n;
+  b.onclick=()=>sound(n);
+  $("learn").appendChild(b);
+ }
+}
+
+function renderChoices(){
+ $("choices").innerHTML="";
+ for(let n=0;n<10;n++){
+  const b=document.createElement("button");
+  b.textContent=n;
+  b.disabled=phase!=="answer";
+  if(answer.includes(n) && false)b.classList.add("selected");
+  b.onclick=()=>{
+   if(phase!=="answer")return;
+   answer.push(n);
+   $("answer").textContent=answer.join(" → ");
+   $("progress").textContent=answer.length+" de "+sequence.length+" números selecionados";
+   b.classList.add("selected");
+   b.disabled=true;
+  };
+  $("choices").appendChild(b);
+ }
+}
+
+async function playSequence(){
+ phase="listen";
+ answer=[];
+ $("math").classList.add("hidden");
+ $("feedback").textContent="";
+ $("answer").textContent="";
+ $("status").textContent="👂 Escute com atenção!";
+ $("progress").textContent="Reproduzindo "+sequence.length+" sons...";
+ $("start").disabled=true;
+ renderChoices();
+ for(let n of sequence){
+  sound(n);
+  await wait(650);
+ }
+ phase="answer";
+ $("status").textContent="Agora repita a sequência clicando nos números!";
+ $("progress").textContent="0 de "+sequence.length+" números selecionados";
+ $("start").disabled=false;
+ $("start").textContent="▶ Ouvir nova rodada";
+ renderChoices();
+}
+
+$("start").onclick=()=>{
+ if(phase==="answer" && answer.length===0 && sequence.length){
+  playSequence();
+  return;
+ }
+ if(phase==="answer" && answer.length>0)return;
+ getAudio();
+ sequence=[];
+ const length=Math.min(2+level,10);
+ for(let i=0;i<length;i++){
+  sequence.push(Math.floor(Math.random()*10));
+ }
+ $("level").textContent="Nível "+level+" • "+length+" sons";
+ $("start").textContent="Reproduzindo...";
+ playSequence();
+};
+
+$("undo").onclick=()=>{
+ if(phase!=="answer")return;
+ answer.pop();
+ $("answer").textContent=answer.join(" → ");
+ $("progress").textContent=answer.length+" de "+sequence.length+" números selecionados";
+ renderChoices();
+ // Restore disabled state for numbers already selected.
+ const counts={};
+ answer.forEach(n=>counts[n]=(counts[n]||0)+1);
+ [...$("choices").children].forEach((b,n)=>{
+  b.disabled=phase!=="answer" || (counts[n]||0)>0;
+ });
+};
+
+$("check").onclick=()=>{
+ if(phase!=="answer")return;
+ if(answer.length!==sequence.length){
+  $("feedback").textContent="Complete toda a sequência primeiro!";
+  return;
+ }
+ const correct=answer.every((n,i)=>n===sequence[i]);
+ if(!correct){
+  $("feedback").textContent="Não foi dessa vez! Tente outra rodada.";
+  $("feedback").style.color="#ffb2b2";
+  phase="ready";
+  $("status").textContent="A sequência correta era: "+sequence.join(" – ");
+  $("start").textContent="▶ Tentar novamente";
+  $("start").disabled=false;
+  return;
+ }
+ $("feedback").textContent="🎉 Sequência correta! Agora calcule a média.";
+ $("feedback").style.color="#70e0b0";
+ phase="math";
+ roundPoints=sequence.length*10;
+ $("math").classList.remove("hidden");
+ $("mathQuestion").textContent="Qual é a média aritmética de: "+sequence.join(", ")+"?";
+ $("mean").value="";
+ $("mathFeedback").textContent="";
+};
+
+$("checkMean").onclick=()=>{
+ if(phase!=="math")return;
+ const value=$("mean").value.trim();
+ if(value===""){
+  $("mathFeedback").textContent="Digite sua resposta primeiro.";
+  return;
+ }
+ const average=sequence.reduce((a,b)=>a+b,0)/sequence.length;
+ const given=Number(value);
+ if(Math.abs(given-average)<0.000001){
+  score+=roundPoints+50;
+  $("mathFeedback").textContent="🏆 Parabéns! Média correta: "+average.toLocaleString("pt-BR");
+  $("mathFeedback").style.color="#70e0b0";
+  $("score").textContent=score+" pontos";
+  level++;
+  $("record").textContent="Você chegou ao nível "+level+"!";
+  $("status").textContent="Desafio concluído! Prepare-se para o próximo nível.";
+  phase="ready";
+  $("start").textContent="▶ PRÓXIMA FASE";
+  $("start").disabled=false;
+ }else{
+  $("mathFeedback").textContent="Quase! Tente novamente. Some os números e divida pela quantidade.";
+  $("mathFeedback").style.color="#ffdb75";
+ }
+};
+
+createButtons();
+renderChoices();
+</script>
+</body>
+</html>
